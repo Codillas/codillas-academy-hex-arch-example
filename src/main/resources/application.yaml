@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: hexagonal-orders
+  docker:
+    compose:
+      lifecycle-management: start-and-stop
+      readiness:
+        timeout: 1m
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+
+server:
+  shutdown: graceful
