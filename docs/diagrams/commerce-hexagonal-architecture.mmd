@@ -1,0 +1,141 @@
+%% Commerce modular monolith: Hexagonal Architecture with Spring Boot
+%% Solid arrows: runtime calls / I/O
+%% Dashed arrows: a concrete class implements a port
+%% Thick arrows: Spring dependency-injection wiring
+
+flowchart TB
+    client["Web / mobile client"]
+
+    subgraph application["Commerce Spring Boot modular monolith"]
+        direction TB
+
+        boot["CommerceApplication<br/>@SpringBootApplication · @Modulithic<br/>@Bean Clock"]
+
+        subgraph modules["Business modules — package by capability"]
+            direction TB
+
+            subgraph customers["customers — no module dependencies"]
+                direction LR
+                cWeb["CustomerController<br/>REST adapter"]
+                cApi["«api ports»<br/>CustomerUseCases<br/>CustomerDirectory"]
+                cService["CustomerApplicationService<br/>@Service · @Transactional"]
+                cDomain["Customer<br/>framework-free domain"]
+                cRepo["«outbound port»<br/>CustomerRepository"]
+                cJpa["JpaCustomerRepositoryAdapter<br/>@Repository"]
+
+                cWeb -->|invokes| cApi
+                cService -.->|implements| cApi
+                cService -->|uses| cDomain
+                cService -->|depends on| cRepo
+                cJpa -.->|implements| cRepo
+            end
+
+            subgraph catalog["catalog — no module dependencies"]
+                direction LR
+                pWeb["ProductController<br/>REST adapter"]
+                pApi["«api ports»<br/>ProductUseCases<br/>ProductCatalog"]
+                pService["ProductApplicationService<br/>@Service · @Transactional"]
+                pDomain["Product<br/>framework-free domain"]
+                pRepo["«outbound port»<br/>ProductRepository"]
+                pJpa["JpaProductRepositoryAdapter<br/>@Repository"]
+
+                pWeb -->|invokes| pApi
+                pService -.->|implements| pApi
+                pService -->|uses| pDomain
+                pService -->|depends on| pRepo
+                pJpa -.->|implements| pRepo
+            end
+
+            subgraph inventory["inventory — allowed dependency: catalog::api"]
+                direction LR
+                iWeb["InventoryController<br/>REST adapter"]
+                iApi["«api ports»<br/>InventoryUseCases<br/>InventoryOperations"]
+                iService["InventoryApplicationService<br/>@Service · @Transactional"]
+                iDomain["Stock<br/>framework-free domain"]
+                iRepo["«outbound port»<br/>InventoryRepository"]
+                iJpa["JpaInventoryRepositoryAdapter<br/>@Repository<br/>pessimistic stock lock"]
+
+                iWeb -->|invokes| iApi
+                iService -.->|implements| iApi
+                iService -->|uses| iDomain
+                iService -->|depends on| iRepo
+                iJpa -.->|implements| iRepo
+            end
+
+            subgraph orders["orders — allowed dependencies: customers::api, catalog::api, inventory::api"]
+                direction LR
+                oWeb["OrderController<br/>REST adapter"]
+                oApi["«api port»<br/>OrderUseCases"]
+                oService["OrderApplicationService<br/>@Service · @Transactional<br/>orchestrates order workflow"]
+                oDomain["Order aggregate<br/>framework-free state machine"]
+                oRepo["«outbound port»<br/>OrderRepository"]
+                oJpa["JpaOrderRepositoryAdapter<br/>@Repository<br/>pessimistic lifecycle lock"]
+
+                oWeb -->|invokes| oApi
+                oService -.->|implements| oApi
+                oService -->|uses| oDomain
+                oService -->|depends on| oRepo
+                oJpa -.->|implements| oRepo
+            end
+        end
+
+        iService -->|calls catalog::api| pApi
+        oService -->|calls customers::api| cApi
+        oService -->|calls catalog::api| pApi
+        oService -->|reserves / releases via inventory::api| iApi
+
+        boot ==>|constructor injection| cService
+        boot ==>|constructor injection| pService
+        boot ==>|constructor injection| iService
+        boot ==>|constructor injection| oService
+    end
+
+    subgraph infrastructure["Infrastructure"]
+        direction LR
+        compose["Spring Boot Docker Compose support<br/>start-and-stop lifecycle · health check"]
+        flyway["Flyway<br/>V1 → V2 → V3 migrations"]
+        postgres[("PostgreSQL<br/>customers · products · inventory · orders")]
+
+        compose -->|starts| postgres
+        flyway -->|migrates schema| postgres
+    end
+
+    subgraph guardrails["Architecture guardrails"]
+        direction LR
+        modulith["Spring Modulith<br/>@ApplicationModule allowedDependencies<br/>@NamedInterface api"]
+        moduleTest["ApplicationModules.of<br/>(CommerceApplication.class).verify()"]
+        archunit["ArchUnit<br/>strict package and layer rules<br/>port DI · adapter placement · module internals"]
+
+        modulith -->|verified by| moduleTest
+    end
+
+    client -->|HTTP /api/customers| cWeb
+    client -->|HTTP /api/products| pWeb
+    client -->|HTTP /api/inventory| iWeb
+    client -->|HTTP /api/orders| oWeb
+
+    cJpa -->|JPA / SQL| postgres
+    pJpa -->|JPA / SQL| postgres
+    iJpa -->|JPA / SQL| postgres
+    oJpa -->|JPA / SQL| postgres
+
+    boot -->|development lifecycle| compose
+    boot -->|runs at startup| flyway
+    application -.->|module boundaries| modulith
+    application -.->|dependency direction| archunit
+
+    classDef external fill:#f8fafc,stroke:#64748b,color:#0f172a
+    classDef adapter fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    classDef port fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef applicationNode fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef domainNode fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    classDef springNode fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef guardrail fill:#ffffff,stroke:#475569,color:#334155,stroke-dasharray:4 3
+
+    class client,postgres external
+    class cWeb,cJpa,pWeb,pJpa,iWeb,iJpa,oWeb,oJpa adapter
+    class cApi,cRepo,pApi,pRepo,iApi,iRepo,oApi,oRepo port
+    class cService,pService,iService,oService applicationNode
+    class cDomain,pDomain,iDomain,oDomain domainNode
+    class boot,compose,flyway springNode
+    class modulith,moduleTest,archunit guardrail

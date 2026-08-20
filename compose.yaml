@@ -2,18 +2,18 @@ services:
   postgres:
     image: postgres:18.4-alpine
     environment:
-      POSTGRES_DB: orders
-      POSTGRES_USER: orders
-      POSTGRES_PASSWORD: orders
+      POSTGRES_DB: commerce
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce
     ports:
       - "5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U orders -d orders"]
+      test: ["CMD-SHELL", "pg_isready -U commerce -d commerce"]
       interval: 2s
       timeout: 3s
       retries: 15
     volumes:
-      - orders-postgres-data:/var/lib/postgresql
+      - commerce-postgres-data:/var/lib/postgresql
 
 volumes:
-  orders-postgres-data:
+  commerce-postgres-data:
