@@ -27,7 +27,7 @@ The application combines three complementary ideas:
 1. **Package by business capability.** The top-level packages are `customers`, `catalog`,
    `inventory`, and `orders`, rather than global `controller`, `service`, and `repository` packages.
 2. **Hexagonal internals.** Each module contains public API ports, a framework-free domain,
-   application services, outbound ports, and inbound/outbound adapters.
+   application orchestration, and web/persistence adapters.
 3. **A verified modular monolith.** Spring Modulith declares allowed dependencies and exposed named
    interfaces. ArchUnit verifies the inward dependency rule.
 
@@ -65,15 +65,12 @@ The declarations live in each module's `package-info.java`. Public API packages 
 
 ```text
 <module>
-├── api                         inbound use-case ports and cross-module contracts
-├── domain                      business state and invariants
-├── application
-│   ├── service                 use-case implementations and transaction boundaries
-│   ├── port.outbound           dependencies required by the application core
-│   └── exception               module-internal application failures
+├── api                         cohesive use-case ports and cross-module contracts
+├── domain                      framework-free business state and invariants
+├── application                 services, repository ports, and application failures
 └── adapter
-    ├── inbound.web             REST controllers, request/response DTOs, HTTP error mapping
-    └── outbound.persistence    JPA entities and outbound-port implementations
+    ├── web                     REST controllers, request/response DTOs, HTTP error mapping
+    └── persistence             JPA entities and repository-port implementations
 ```
 
 ### Dependency rule
@@ -81,10 +78,10 @@ The declarations live in each module's `package-info.java`. Public API packages 
 - Domain classes contain no Spring, Jakarta Persistence, HTTP, or adapter dependencies.
 - Public API types contain no Spring or Jakarta dependencies. The package descriptor alone carries
   the Spring Modulith `@NamedInterface` annotation.
-- Application services depend on domain types, outbound ports, and explicitly allowed module APIs.
+- Application services depend on domain types, repository ports, and explicitly allowed module APIs.
 - Inbound adapters invoke use-case interfaces, not concrete services.
 - Persistence adapters implement outbound repository interfaces.
-- Inbound adapters never call outbound adapters directly.
+- Web adapters never call persistence adapters directly.
 
 These rules keep the business model testable without a Spring context while still allowing pragmatic
 Spring annotations on application services.
@@ -115,7 +112,7 @@ that JDK interface, which makes domain and application tests deterministic.
 ```mermaid
 sequenceDiagram
     actor Client
-    participant Web as OrderCommandController
+    participant Web as OrderController
     participant Orders as OrderApplicationService
     participant Customers as CustomerDirectory
     participant Catalog as ProductCatalog
@@ -146,7 +143,7 @@ rewrite the commercial facts of an existing order.
 ```mermaid
 sequenceDiagram
     actor Client
-    participant Web as OrderCommandController
+    participant Web as OrderController
     participant Orders as OrderApplicationService
     participant OrderRepo as OrderRepository
     participant Inventory as InventoryOperations
@@ -209,13 +206,18 @@ module's JPA entity.
 ApplicationModules.of(CommerceApplication.class).verify();
 ```
 
-This verifies cycles, named-interface access, and declared allowed dependencies. `HexagonalArchitectureTests`
-adds rules that ensure:
+This verifies cycles, named-interface access, and declared allowed dependencies.
+`HexagonalArchitectureTests` adds executable rules for:
 
-- domains are framework-free;
-- public API types do not expose internal layers;
-- domain, application, and API code do not depend on adapters;
-- inbound adapters do not access outbound adapters.
+- the exact five-package module template;
+- inward-only dependencies between API, domain, application, web, and persistence;
+- framework-free domain and public API types;
+- keeping Spring MVC/Validation and Spring Data/JPA in their respective adapters;
+- controller injection through API interfaces rather than concrete services;
+- application-service and persistence-adapter implementation of their ports;
+- consistent placement and naming for controllers, exception handlers, services, ports, JPA
+  entities, Spring Data repositories, and repository adapters;
+- protection of every module's domain, application, and adapters from cross-module imports.
 
 Run both guardrails with the rest of the test suite:
 
@@ -228,12 +230,12 @@ mvn clean verify
 When adding behavior:
 
 1. Choose the business module that owns the behavior.
-2. Add or extend a small interface in that module's `api` package for an inbound or cross-module
-   contract.
+2. Extend the module's cohesive `*UseCases` interface, or add a narrow cross-module interface under
+   `api` when callers need a smaller contract.
 3. Put business invariants in the domain and orchestration in an application service.
 4. Introduce an outbound port only when the application core needs an external capability.
-5. Implement infrastructure details under `adapter.outbound`; keep HTTP details under
-   `adapter.inbound.web`.
+5. Implement infrastructure details under `adapter.persistence`; keep HTTP details under
+   `adapter.web`.
 6. If another module must call the new contract, expose it through the named API and update the
    caller's `allowedDependencies` declaration.
 7. Add a new Flyway migration rather than editing an applied migration.

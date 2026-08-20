@@ -31,15 +31,12 @@ com.codillas.academy.commerce
 ├── catalog
 ├── inventory
 └── orders
-    ├── api                         # inbound ports and public module contracts
-    ├── domain                      # framework-free business model
-    ├── application
-    │   ├── service                 # use-case implementations
-    │   ├── port.outbound           # interfaces required by the core
-    │   └── exception
+    ├── api                         # cohesive use-case ports and public module contracts
+    ├── domain                      # framework-free business model and invariants
+    ├── application                 # services, repository ports, application failures
     └── adapter
-        ├── inbound.web             # REST controllers and HTTP models
-        └── outbound.persistence    # JPA implementations of repository ports
+        ├── web                     # REST controllers, DTOs, and HTTP error mapping
+        └── persistence             # JPA implementations of repository ports
 ```
 
 The same inner hexagon is repeated within each business module. Spring Modulith named interfaces
@@ -60,7 +57,7 @@ flowchart TB
             subgraph customers["customers — no module dependencies"]
                 direction LR
                 cWeb["CustomerController<br/>REST adapter"]
-                cApi["«api ports»<br/>RegisterCustomerUseCase<br/>GetCustomerUseCase · ListCustomersUseCase<br/>CustomerDirectory"]
+                cApi["«api ports»<br/>CustomerUseCases<br/>CustomerDirectory"]
                 cService["CustomerApplicationService<br/>@Service · @Transactional"]
                 cDomain["Customer<br/>framework-free domain"]
                 cRepo["«outbound port»<br/>CustomerRepository"]
@@ -76,7 +73,7 @@ flowchart TB
             subgraph catalog["catalog — no module dependencies"]
                 direction LR
                 pWeb["ProductController<br/>REST adapter"]
-                pApi["«api ports»<br/>CreateProductUseCase · GetProductUseCase<br/>ListProductsUseCase · DeactivateProductUseCase<br/>ProductCatalog"]
+                pApi["«api ports»<br/>ProductUseCases<br/>ProductCatalog"]
                 pService["ProductApplicationService<br/>@Service · @Transactional"]
                 pDomain["Product<br/>framework-free domain"]
                 pRepo["«outbound port»<br/>ProductRepository"]
@@ -92,7 +89,7 @@ flowchart TB
             subgraph inventory["inventory — allowed dependency: catalog::api"]
                 direction LR
                 iWeb["InventoryController<br/>REST adapter"]
-                iApi["«api ports»<br/>RestockInventoryUseCase<br/>GetInventoryUseCase<br/>InventoryOperations"]
+                iApi["«api ports»<br/>InventoryUseCases<br/>InventoryOperations"]
                 iService["InventoryApplicationService<br/>@Service · @Transactional"]
                 iDomain["Stock<br/>framework-free domain"]
                 iRepo["«outbound port»<br/>InventoryRepository"]
@@ -107,8 +104,8 @@ flowchart TB
 
             subgraph orders["orders — allowed dependencies: customers::api, catalog::api, inventory::api"]
                 direction LR
-                oWeb["OrderCommandController<br/>OrderQueryController<br/>REST adapters"]
-                oApi["«api ports»<br/>PlaceOrderUseCase · GetOrderUseCase<br/>ListOrdersUseCase · ConfirmOrderUseCase<br/>CancelOrderUseCase"]
+                oWeb["OrderController<br/>REST adapter"]
+                oApi["«api port»<br/>OrderUseCases"]
                 oService["OrderApplicationService<br/>@Service · @Transactional<br/>orchestrates order workflow"]
                 oDomain["Order aggregate<br/>framework-free state machine"]
                 oRepo["«outbound port»<br/>OrderRepository"]
@@ -147,7 +144,7 @@ flowchart TB
         direction LR
         modulith["Spring Modulith<br/>@ApplicationModule allowedDependencies<br/>@NamedInterface api"]
         moduleTest["ApplicationModules.of<br/>(CommerceApplication.class).verify()"]
-        archunit["ArchUnit<br/>domain/API framework-free<br/>core cannot depend on adapters"]
+        archunit["ArchUnit<br/>strict package and layer rules<br/>port DI · adapter placement · module internals"]
 
         modulith -->|verified by| moduleTest
     end
@@ -202,7 +199,8 @@ concurrent orders cannot spend the same stock. Lifecycle changes also lock the o
 concurrent repeated cancellations release stock exactly once.
 
 Spring Modulith verifies module access, named interfaces, cycles, and declared dependencies.
-ArchUnit separately enforces hexagonal dependency direction and framework-free domain/API code.
+ArchUnit separately enforces the standard package layout, inward dependency direction, framework
+boundaries, port-based controller injection, adapter placement, and module-internal visibility.
 See the [architecture guide](docs/architecture.md) for request sequences, transaction boundaries,
 data ownership, and the rules for extending a module.
 

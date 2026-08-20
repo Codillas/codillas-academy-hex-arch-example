@@ -159,12 +159,14 @@ Run the complete verification gate:
 mvn clean verify
 ```
 
-The current suite contains 31 tests across four categories:
+The current suite contains 51 tests across four categories, including 24 executable architecture
+rules:
 
 - domain tests for business invariants and state transitions;
 - application-service tests using in-memory port implementations;
 - a Spring Modulith test for module cycles, named interfaces, and allowed dependencies;
-- ArchUnit rules for framework-free domain/API types and inward adapter dependencies.
+- ArchUnit rules for package layout, inward dependencies, framework isolation, port-based injection,
+  adapter placement and naming, and module-internal visibility.
 
 Run one test class while iterating:
 
@@ -186,20 +188,20 @@ When adding a use case, keep the module-first structure:
 com.codillas.academy.commerce.<module>
 ├── api
 ├── domain
-├── application.service
-├── application.port.outbound
-├── application.exception
-├── adapter.inbound.web
-└── adapter.outbound.persistence
+├── application
+└── adapter
+    ├── web
+    └── persistence
 ```
 
 Guidelines:
 
-- add an inbound interface under `api` and inject it into the controller;
+- extend the cohesive `*UseCases` interface under `api` and inject it into the controller;
+- keep narrower cross-module interfaces separate when their callers need only part of the module;
 - implement the interface in an application service;
 - put domain rules in framework-free domain types;
-- define an outbound interface when the application needs infrastructure;
-- implement that interface in an outbound adapter;
+- define a repository port directly under `application` when orchestration needs persistence;
+- implement that interface under `adapter.persistence`;
 - expose cross-module calls only through another module's `api` named interface;
 - update `allowedDependencies` when introducing a legitimate new module dependency;
 - use constructor injection rather than field injection;
