@@ -8,6 +8,17 @@ feature in Spring Boot. It has four business modules backed by one PostgreSQL da
 - **Inventory** restocks, queries, reserves, and releases stock.
 - **Orders** places, queries, lists, confirms, and cancels orders.
 
+The current stack is Java 25, Spring Boot 4.1, Spring Modulith 2.1, PostgreSQL 18, Flyway,
+Spring Data JPA, Maven, and Docker Compose.
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Architecture and module boundaries](docs/architecture.md)
+- [HTTP API reference](docs/api.md)
+- [Development, database, and migration guide](docs/development.md)
+- [Standalone Mermaid source](docs/diagrams/commerce-hexagonal-architecture.mmd)
+
 ## Architecture
 
 The code is package-by-business-capability first. Each module then owns its domain, application
@@ -192,6 +203,8 @@ concurrent repeated cancellations release stock exactly once.
 
 Spring Modulith verifies module access, named interfaces, cycles, and declared dependencies.
 ArchUnit separately enforces hexagonal dependency direction and framework-free domain/API code.
+See the [architecture guide](docs/architecture.md) for request sequences, transaction boundaries,
+data ownership, and the rules for extending a module.
 
 ## Requirements
 
@@ -267,7 +280,7 @@ curl http://localhost:8080/api/inventory/{productId}
 ## HTTP use cases
 
 | Module | HTTP | Endpoint | Use case |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Customers | `POST` | `/api/customers` | Register customer |
 | Customers | `GET` | `/api/customers/{id}` | Get customer |
 | Customers | `GET` | `/api/customers` | List customers |
@@ -286,6 +299,7 @@ curl http://localhost:8080/api/inventory/{productId}
 Validation and business failures use RFC 9457 problem responses. Examples include `404` for an
 unknown resource, `409` for insufficient stock or an invalid state transition, and `422` when an
 order references an unknown customer or unavailable product.
+The [API reference](docs/api.md) documents all request and response shapes.
 
 ## Database and verification
 
@@ -312,6 +326,9 @@ Run all domain, application, architecture, and module-boundary tests:
 ```bash
 mvn clean verify
 ```
+
+For migration conventions and both development and packaged-JAR launch modes, see the
+[development guide](docs/development.md).
 
 Remove PostgreSQL and its persisted development data:
 
