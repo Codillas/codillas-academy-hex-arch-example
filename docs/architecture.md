@@ -186,7 +186,7 @@ from being released twice.
 - Confirmation and cancellation take a pessimistic write lock on the order row to serialize lifecycle
   transitions.
 - Read use cases inherit `@Transactional(readOnly = true)` from their application service.
-- Hibernate schema generation is disabled with `ddl-auto: validate`; Flyway alone changes the schema.
+- Hibernate schema generation is disabled with `ddl-auto: validate`; Liquibase alone changes the schema.
 
 This design relies on all modules sharing one database transaction manager. If a module moves to a
 separate process or database, these synchronous contracts and transaction assumptions must be
@@ -251,7 +251,7 @@ When adding behavior:
    `adapter.out.persistence`.
 6. If another module must call the new inbound port, expose it through the named interface `api` and
    update the caller's `allowedDependencies` declaration.
-7. Add a new Flyway migration rather than editing an applied migration.
+7. Add and include a new Liquibase changeset rather than editing one that has already run.
 8. Add domain/application tests and run the architecture verification.
 
 Do not import another module's domain, service, outbound port, or adapter packages. Cross-module
