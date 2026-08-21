@@ -159,14 +159,16 @@ Run the complete verification gate:
 mvn clean verify
 ```
 
-The current suite contains 51 tests across four categories, including 24 executable architecture
-rules:
+The suite covers four categories:
 
 - domain tests for business invariants and state transitions;
 - application-service tests using in-memory port implementations;
 - a Spring Modulith test for module cycles, named interfaces, and allowed dependencies;
-- ArchUnit rules for package layout, inward dependencies, framework isolation, port-based injection,
-  adapter placement and naming, and module-internal visibility.
+- ArchUnit rules for application ownership of ports, directional adapter placement, inward
+  dependencies, framework isolation, and dependency injection through port interfaces.
+
+Spring Modulith checks the module graph. ArchUnit stays focused on internal hexagonal boundaries and
+does not enforce class-name suffixes.
 
 Run one test class while iterating:
 
@@ -186,26 +188,33 @@ When adding a use case, keep the module-first structure:
 
 ```text
 com.codillas.academy.commerce.<module>
-├── api
 ├── domain
 ├── application
+│   ├── port
+│   │   ├── in
+│   │   └── out
+│   └── service
 └── adapter
-    ├── web
-    └── persistence
+    ├── in
+    │   └── web
+    └── out
+        └── persistence
 ```
 
 Guidelines:
 
-- extend the cohesive `*UseCases` interface under `api` and inject it into the controller;
-- keep narrower cross-module interfaces separate when their callers need only part of the module;
-- implement the interface in an application service;
+- extend the cohesive `*UseCases` interface under `application.port.in` and inject it into the
+  controller;
+- keep narrower cross-module inbound ports separate when callers need only part of the module;
+- implement inbound ports under `application.service`;
 - put domain rules in framework-free domain types;
-- define a repository port directly under `application` when orchestration needs persistence;
-- implement that interface under `adapter.persistence`;
-- expose cross-module calls only through another module's `api` named interface;
+- define required repository or integration interfaces under `application.port.out`;
+- implement outbound ports under `adapter.out.persistence` or another `adapter.out` technology;
+- put HTTP controllers and transport DTOs under `adapter.in.web`;
+- expose `application.port.in` as the Spring Modulith named interface `api`;
 - update `allowedDependencies` when introducing a legitimate new module dependency;
 - use constructor injection rather than field injection;
-- keep REST DTOs and JPA entities out of public API contracts.
+- keep REST DTOs and JPA entities out of application ports.
 
 The [architecture guide](architecture.md) explains the dependency rules and transaction model in
 more detail.

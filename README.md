@@ -21,8 +21,8 @@ Spring Data JPA, Maven, and Docker Compose.
 
 ## Architecture
 
-The code is package-by-business-capability first. Each module then owns its domain, application
-logic, ports, and adapters:
+The code is package-by-business-capability first. Inside each module, ports belong to the application
+core and adapters stay outside it:
 
 ```text
 com.codillas.academy.commerce
@@ -31,16 +31,22 @@ com.codillas.academy.commerce
 ├── catalog
 ├── inventory
 └── orders
-    ├── api                         # cohesive use-case ports and public module contracts
-    ├── domain                      # framework-free business model and invariants
-    ├── application                 # services, repository ports, application failures
+    ├── domain                              # framework-free business model and invariants
+    ├── application
+    │   ├── port
+    │   │   ├── in                           # use cases, commands, results, public module contracts
+    │   │   └── out                          # interfaces required by application services
+    │   └── service                          # use-case implementations and transaction boundaries
     └── adapter
-        ├── web                     # REST controllers, DTOs, and HTTP error mapping
-        └── persistence             # JPA implementations of repository ports
+        ├── in
+        │   └── web                          # REST controllers, DTOs, and HTTP error mapping
+        └── out
+            └── persistence                  # JPA implementations of outbound ports
 ```
 
-The same inner hexagon is repeated within each business module. Spring Modulith named interfaces
-make cross-module dependencies explicit:
+The same inner hexagon is repeated within each business module. Spring Modulith publishes each
+`application.port.in` package as the named interface `api`, which makes cross-module dependencies
+explicit:
 
 ```mermaid
 flowchart TB
@@ -49,73 +55,73 @@ flowchart TB
     subgraph application["Commerce Spring Boot modular monolith"]
         direction TB
 
-        boot["CommerceApplication<br/>@SpringBootApplication · @Modulithic<br/>@Bean Clock"]
+        boot["CommerceApplication<br/>@SpringBootApplication · @Modulithic<br/>component scanning · constructor injection<br/>@Bean Clock"]
 
-        subgraph modules["Business modules — package by capability"]
+        subgraph modules["Business modules: package by capability"]
             direction TB
 
-            subgraph customers["customers — no module dependencies"]
+            subgraph customers["customers: no module dependencies"]
                 direction LR
-                cWeb["CustomerController<br/>REST adapter"]
-                cApi["«api ports»<br/>CustomerUseCases<br/>CustomerDirectory"]
-                cService["CustomerApplicationService<br/>@Service · @Transactional"]
-                cDomain["Customer<br/>framework-free domain"]
-                cRepo["«outbound port»<br/>CustomerRepository"]
-                cJpa["JpaCustomerRepositoryAdapter<br/>@Repository"]
+                cWeb["adapter.in.web<br/>CustomerController<br/>inbound REST adapter"]
+                cApi["application.port.in<br/>CustomerUseCases · CustomerDirectory"]
+                cService["application.service<br/>CustomerApplicationService<br/>@Service · @Transactional"]
+                cDomain["domain<br/>Customer · framework-free"]
+                cRepo["application.port.out<br/>CustomerRepository"]
+                cJpa["adapter.out.persistence<br/>JpaCustomerRepositoryAdapter<br/>@Repository"]
 
-                cWeb -->|invokes| cApi
-                cService -.->|implements| cApi
+                cWeb -->|calls injected port| cApi
+                cService -.->|implements inbound port| cApi
                 cService -->|uses| cDomain
-                cService -->|depends on| cRepo
-                cJpa -.->|implements| cRepo
+                cService -->|uses injected outbound port| cRepo
+                cJpa -.->|implements outbound port| cRepo
             end
 
-            subgraph catalog["catalog — no module dependencies"]
+            subgraph catalog["catalog: no module dependencies"]
                 direction LR
-                pWeb["ProductController<br/>REST adapter"]
-                pApi["«api ports»<br/>ProductUseCases<br/>ProductCatalog"]
-                pService["ProductApplicationService<br/>@Service · @Transactional"]
-                pDomain["Product<br/>framework-free domain"]
-                pRepo["«outbound port»<br/>ProductRepository"]
-                pJpa["JpaProductRepositoryAdapter<br/>@Repository"]
+                pWeb["adapter.in.web<br/>ProductController<br/>inbound REST adapter"]
+                pApi["application.port.in<br/>ProductUseCases · ProductCatalog"]
+                pService["application.service<br/>ProductApplicationService<br/>@Service · @Transactional"]
+                pDomain["domain<br/>Product · framework-free"]
+                pRepo["application.port.out<br/>ProductRepository"]
+                pJpa["adapter.out.persistence<br/>JpaProductRepositoryAdapter<br/>@Repository"]
 
-                pWeb -->|invokes| pApi
-                pService -.->|implements| pApi
+                pWeb -->|calls injected port| pApi
+                pService -.->|implements inbound port| pApi
                 pService -->|uses| pDomain
-                pService -->|depends on| pRepo
-                pJpa -.->|implements| pRepo
+                pService -->|uses injected outbound port| pRepo
+                pJpa -.->|implements outbound port| pRepo
             end
 
-            subgraph inventory["inventory — allowed dependency: catalog::api"]
+            subgraph inventory["inventory: allowed dependency catalog::api"]
                 direction LR
-                iWeb["InventoryController<br/>REST adapter"]
-                iApi["«api ports»<br/>InventoryUseCases<br/>InventoryOperations"]
-                iService["InventoryApplicationService<br/>@Service · @Transactional"]
-                iDomain["Stock<br/>framework-free domain"]
-                iRepo["«outbound port»<br/>InventoryRepository"]
-                iJpa["JpaInventoryRepositoryAdapter<br/>@Repository<br/>pessimistic stock lock"]
+                iWeb["adapter.in.web<br/>InventoryController<br/>inbound REST adapter"]
+                iApi["application.port.in<br/>InventoryUseCases · InventoryOperations"]
+                iService["application.service<br/>InventoryApplicationService<br/>@Service · @Transactional"]
+                iDomain["domain<br/>Stock · framework-free"]
+                iRepo["application.port.out<br/>InventoryRepository"]
+                iJpa["adapter.out.persistence<br/>JpaInventoryRepositoryAdapter<br/>@Repository · pessimistic stock lock"]
 
-                iWeb -->|invokes| iApi
-                iService -.->|implements| iApi
+                iWeb -->|calls injected port| iApi
+                iService -.->|implements inbound port| iApi
                 iService -->|uses| iDomain
-                iService -->|depends on| iRepo
-                iJpa -.->|implements| iRepo
+                iService -->|uses injected outbound port| iRepo
+                iJpa -.->|implements outbound port| iRepo
             end
 
-            subgraph orders["orders — allowed dependencies: customers::api, catalog::api, inventory::api"]
+            subgraph orders["orders: allowed dependencies customers::api, catalog::api, inventory::api"]
                 direction LR
-                oWeb["OrderController<br/>REST adapter"]
-                oApi["«api port»<br/>OrderUseCases"]
-                oService["OrderApplicationService<br/>@Service · @Transactional<br/>orchestrates order workflow"]
-                oDomain["Order aggregate<br/>framework-free state machine"]
-                oRepo["«outbound port»<br/>OrderRepository"]
-                oJpa["JpaOrderRepositoryAdapter<br/>@Repository<br/>pessimistic lifecycle lock"]
+                oWeb["adapter.in.web<br/>OrderController<br/>inbound REST adapter"]
+                oApi["application.port.in<br/>OrderUseCases"]
+                oService["application.service<br/>OrderApplicationService<br/>@Service · @Transactional"]
+                oDomain["domain<br/>Order · framework-free state machine"]
+                oRepo["application.port.out<br/>OrderRepository"]
+                oJpa["adapter.out.persistence<br/>JpaOrderRepositoryAdapter<br/>@Repository · pessimistic lifecycle lock"]
 
-                oWeb -->|invokes| oApi
-                oService -.->|implements| oApi
+                oWeb -->|calls injected port| oApi
+                oService -.->|implements inbound port| oApi
                 oService -->|uses| oDomain
-                oService -->|depends on| oRepo
-                oJpa -.->|implements| oRepo
+                oService -->|uses injected outbound port| oRepo
+                oJpa -.->|implements outbound port| oRepo
             end
         end
 
@@ -124,10 +130,6 @@ flowchart TB
         oService -->|calls catalog::api| pApi
         oService -->|reserves / releases via inventory::api| iApi
 
-        boot ==>|constructor injection| cService
-        boot ==>|constructor injection| pService
-        boot ==>|constructor injection| iService
-        boot ==>|constructor injection| oService
     end
 
     subgraph infrastructure["Infrastructure"]
@@ -142,9 +144,9 @@ flowchart TB
 
     subgraph guardrails["Architecture guardrails"]
         direction LR
-        modulith["Spring Modulith<br/>@ApplicationModule allowedDependencies<br/>@NamedInterface api"]
+        modulith["Spring Modulith<br/>application.port.in = named interface api<br/>@ApplicationModule allowedDependencies"]
         moduleTest["ApplicationModules.of<br/>(CommerceApplication.class).verify()"]
-        archunit["ArchUnit<br/>strict package and layer rules<br/>port DI · adapter placement · module internals"]
+        archunit["ArchUnit<br/>application-owned ports · directional adapters<br/>framework isolation · DI through ports"]
 
         modulith -->|verified by| moduleTest
     end
@@ -161,8 +163,8 @@ flowchart TB
 
     boot -->|development lifecycle| compose
     boot -->|runs at startup| flyway
-    application -.->|module boundaries| modulith
-    application -.->|dependency direction| archunit
+    application -.->|module graph and public APIs| modulith
+    application -.->|internal hexagonal boundaries| archunit
 
     classDef external fill:#f8fafc,stroke:#64748b,color:#0f172a
     classDef adapter fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
@@ -188,19 +190,21 @@ inventory ──> catalog
 orders ─────> customers + catalog + inventory
 ```
 
-Interfaces are the ports. Application services implement inbound ports, JPA adapters implement
-outbound repository ports, and constructor injection is the glue. The domain and public API types
-have no Spring or Jakarta dependencies. Spring annotations stay on application services and adapters,
-where dependency injection and transaction boundaries are infrastructure concerns.
+Interfaces under `application.port` are the ports. Application services implement inbound ports and
+depend on outbound ports. REST and JPA code live under directional adapter packages. Spring resolves
+both bindings through constructor injection. Domain and port types have no Spring or Jakarta
+dependencies. Spring annotations stay on services and adapters, where dependency injection and
+transaction boundaries are infrastructure concerns.
 
 Order placement validates the customer and active product, then reserves inventory and saves a
 price/name snapshot in one database transaction. Inventory uses a pessimistic row lock so two
 concurrent orders cannot spend the same stock. Lifecycle changes also lock the order row, so even
 concurrent repeated cancellations release stock exactly once.
 
-Spring Modulith verifies module access, named interfaces, cycles, and declared dependencies.
-ArchUnit separately enforces the standard package layout, inward dependency direction, framework
-boundaries, port-based controller injection, adapter placement, and module-internal visibility.
+Spring Modulith owns the module graph: cycles, named-interface access, and declared dependencies.
+ArchUnit checks that ports remain application concerns, adapters remain outside the core, dependencies
+point inward, frameworks stay in their intended packages, and Spring injects implementations through
+port interfaces. It does not duplicate the Modulith checks or freeze class-name suffixes.
 See the [architecture guide](docs/architecture.md) for request sequences, transaction boundaries,
 data ownership, and the rules for extending a module.
 

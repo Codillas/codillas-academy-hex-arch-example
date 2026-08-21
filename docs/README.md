@@ -23,11 +23,12 @@ orders ─────> customers::api + catalog::api + inventory::api
 Every module applies the same inner hexagonal structure:
 
 ```text
-web adapter → API port ← application service → domain
-                              ↓
-                    repository port ← persistence adapter → PostgreSQL
+adapter.in.web → application.port.in ← application.service → domain
+                                            ↓
+                              application.port.out ← adapter.out.persistence → PostgreSQL
 ```
 
 The arrows describe runtime calls; source-code dependencies still point toward interfaces and the
-domain. Spring Modulith verifies module APIs while strict ArchUnit rules enforce package shape,
-dependency direction, framework isolation, and port-based dependency injection.
+domain. Spring Modulith publishes `application.port.in` as each module's named interface `api`.
+ArchUnit enforces application ownership of ports, directional adapters, dependency direction,
+framework isolation, and dependency injection through interfaces.
