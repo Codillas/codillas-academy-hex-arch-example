@@ -256,5 +256,5 @@ Content-Type: application/problem+json
 | `409 Conflict` | Duplicate email, insufficient stock, unavailable inventory, or invalid order transition |
 | `422 Unprocessable Content` | A referenced customer/product is unavailable for the requested workflow |
 
-Error handlers are scoped to each module's web adapter so HTTP concerns remain outside the domain and
-application ports.
+Error handlers live under each module's `adapter.in.web` package, so HTTP concerns remain outside the
+domain and application ports.

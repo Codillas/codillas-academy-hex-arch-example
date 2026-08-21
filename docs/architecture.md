@@ -26,10 +26,11 @@ The application combines three complementary ideas:
 
 1. **Package by business capability.** The top-level packages are `customers`, `catalog`,
    `inventory`, and `orders`, rather than global `controller`, `service`, and `repository` packages.
-2. **Hexagonal internals.** Each module contains public API ports, a framework-free domain,
-   application orchestration, and web/persistence adapters.
-3. **A verified modular monolith.** Spring Modulith declares allowed dependencies and exposed named
-   interfaces. ArchUnit verifies the inward dependency rule.
+2. **Hexagonal internals.** Each module keeps inbound and outbound ports under `application`, puts
+   orchestration in `application.service`, keeps the domain framework-free, and places delivery and
+   infrastructure code under directional adapters.
+3. **A verified modular monolith.** Spring Modulith verifies the module graph and public module APIs.
+   ArchUnit verifies each module's internal hexagonal boundaries.
 
 The deployment unit remains one Spring Boot process and one PostgreSQL database.
 
@@ -48,8 +49,8 @@ flowchart LR
     orders -->|inventory::api| inventory
 ```
 
-The graph is deliberately acyclic. Cross-module code may only import types from another module's
-named `api` interface.
+The graph is acyclic. Cross-module code may only import types from another module's named `api`
+interface.
 
 | Module | Responsibility | Public contracts used by other modules | Allowed dependencies |
 | --- | --- | --- | --- |
@@ -58,30 +59,38 @@ named `api` interface.
 | `inventory` | Stock restocking, reservation, and release | `InventoryOperations`, inventory result/errors | `catalog::api` |
 | `orders` | Order workflow and price/name snapshots | Order use-case ports | `customers::api`, `catalog::api`, `inventory::api` |
 
-The declarations live in each module's `package-info.java`. Public API packages are exposed with
-`@NamedInterface("api")`.
+Each module exposes `application.port.in` with `@NamedInterface("api")`. The package name states who
+owns the ports; the named-interface alias controls what other modules may import.
 
 ## Anatomy of a module
 
 ```text
 <module>
-├── api                         cohesive use-case ports and cross-module contracts
-├── domain                      framework-free business state and invariants
-├── application                 services, repository ports, and application failures
+├── domain                              framework-free business state and invariants
+├── application
+│   ├── port
+│   │   ├── in                           use cases, commands, results, public module contracts
+│   │   └── out                          interfaces required by application services
+│   └── service                          use-case implementations and transaction boundaries
 └── adapter
-    ├── web                     REST controllers, request/response DTOs, HTTP error mapping
-    └── persistence             JPA entities and repository-port implementations
+    ├── in
+    │   └── web                          REST controllers, request/response DTOs, HTTP error mapping
+    └── out
+        └── persistence                  JPA entities and outbound-port implementations
 ```
 
 ### Dependency rule
 
 - Domain classes contain no Spring, Jakarta Persistence, HTTP, or adapter dependencies.
-- Public API types contain no Spring or Jakarta dependencies. The package descriptor alone carries
-  the Spring Modulith `@NamedInterface` annotation.
-- Application services depend on domain types, repository ports, and explicitly allowed module APIs.
-- Inbound adapters invoke use-case interfaces, not concrete services.
-- Persistence adapters implement outbound repository interfaces.
-- Web adapters never call persistence adapters directly.
+- Inbound and outbound ports are application concerns and contain no Spring, Jakarta, service, or
+  adapter dependencies.
+- The `application.port.in` package contains the module's published contract. Its package descriptor
+  supplies the Spring Modulith `@NamedInterface("api")` alias.
+- Application services implement inbound ports and depend on domain types, outbound ports, and
+  explicitly allowed inbound ports from other modules.
+- Inbound adapters invoke inbound ports rather than concrete services.
+- Outbound adapters implement outbound ports.
+- Adapters never call each other directly.
 
 These rules keep the business model testable without a Spring context while still allowing pragmatic
 Spring annotations on application services.
@@ -91,11 +100,11 @@ Spring annotations on application services.
 Interfaces are the ports and Spring's application context is the composition mechanism:
 
 ```text
-REST controller
-    └── constructor(inbound use-case interface)
-            └── application service implements interface
-                    └── constructor(outbound repository interface)
-                            └── JPA adapter implements interface
+adapter.in.web controller
+    └── constructor(application.port.in interface)
+            └── application.service implementation
+                    └── constructor(application.port.out interface)
+                            └── adapter.out.persistence implementation
 ```
 
 Application services use `@Service`; persistence adapters use `@Repository`; REST adapters use
@@ -206,18 +215,22 @@ module's JPA entity.
 ApplicationModules.of(CommerceApplication.class).verify();
 ```
 
-This verifies cycles, named-interface access, and declared allowed dependencies.
-`HexagonalArchitectureTests` adds executable rules for:
+This test verifies the module graph: cycles, access through named interfaces, and declared allowed
+dependencies.
 
-- the exact five-package module template;
-- inward-only dependencies between API, domain, application, web, and persistence;
-- framework-free domain and public API types;
-- keeping Spring MVC/Validation and Spring Data/JPA in their respective adapters;
-- controller injection through API interfaces rather than concrete services;
-- application-service and persistence-adapter implementation of their ports;
-- consistent placement and naming for controllers, exception handlers, services, ports, JPA
-  entities, Spring Data repositories, and repository adapters;
-- protection of every module's domain, application, and adapters from cross-module imports.
+`HexagonalArchitectureTests` owns the rules inside each module:
+
+- the explicit domain, application-port, application-service, and directional-adapter package shape;
+- inward-only dependencies between inbound adapters, ports, services, domain, and outbound adapters;
+- framework-free domain and application ports;
+- Spring MVC/Validation confined to `adapter.in.web` and Spring Data/JPA confined to
+  `adapter.out.persistence`;
+- controller injection through inbound ports rather than concrete services;
+- application services implementing inbound ports and persistence adapters implementing outbound
+  ports.
+
+ArchUnit does not enforce class-name conventions or repeat the module checks already performed by
+Spring Modulith. Failures therefore point to architectural boundaries rather than style preferences.
 
 Run both guardrails with the rest of the test suite:
 
@@ -230,17 +243,17 @@ mvn clean verify
 When adding behavior:
 
 1. Choose the business module that owns the behavior.
-2. Extend the module's cohesive `*UseCases` interface, or add a narrow cross-module interface under
-   `api` when callers need a smaller contract.
-3. Put business invariants in the domain and orchestration in an application service.
-4. Introduce an outbound port only when the application core needs an external capability.
-5. Implement infrastructure details under `adapter.persistence`; keep HTTP details under
-   `adapter.web`.
-6. If another module must call the new contract, expose it through the named API and update the
-   caller's `allowedDependencies` declaration.
+2. Extend the module's cohesive `*UseCases` interface under `application.port.in`, or add a narrow
+   inbound port when another module needs a smaller contract.
+3. Put business invariants in `domain` and orchestration in `application.service`.
+4. Put interfaces for required external capabilities under `application.port.out`.
+5. Implement HTTP delivery under `adapter.in.web` and persistence under
+   `adapter.out.persistence`.
+6. If another module must call the new inbound port, expose it through the named interface `api` and
+   update the caller's `allowedDependencies` declaration.
 7. Add a new Flyway migration rather than editing an applied migration.
 8. Add domain/application tests and run the architecture verification.
 
-Do not import another module's domain, application, or adapter packages. If an interaction cannot be
-expressed through a narrow public contract without creating a cycle, revisit module ownership before
-adding the dependency.
+Do not import another module's domain, service, outbound port, or adapter packages. Cross-module
+imports must target its published `application.port.in` contract. If that creates a cycle, revisit
+module ownership before adding the dependency.
