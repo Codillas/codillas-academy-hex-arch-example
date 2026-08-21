@@ -31,7 +31,7 @@ Spring Boot:
 2. starts PostgreSQL on a random available host port;
 3. waits for `pg_isready` to report a healthy database;
 4. supplies the JDBC connection details to the application;
-5. runs Flyway migrations;
+5. runs Liquibase changesets;
 6. starts the HTTP server on port `8080`.
 
 With `lifecycle-management: start-and-stop`, stopping the JVM also stops the Compose service that the
@@ -60,7 +60,7 @@ Inspect the schema and data:
 ```bash
 docker compose exec postgres psql -U commerce -d commerce \
   -c '\dt' \
-  -c 'select version, description, success from flyway_schema_history order by installed_rank;' \
+  -c 'select id, author, filename, exectype from databasechangelog order by orderexecuted;' \
   -c 'select * from customers;' \
   -c 'select * from products;' \
   -c 'select * from inventory;' \
@@ -112,7 +112,7 @@ The same environment variables can point the JAR at any compatible PostgreSQL in
 
 ## Database migrations
 
-Flyway is the only schema migration mechanism. Hibernate is configured with:
+Liquibase is the only schema migration mechanism. Hibernate is configured with:
 
 ```yaml
 spring:
@@ -122,34 +122,61 @@ spring:
 ```
 
 Hibernate therefore validates mappings against the migrated schema but never creates or alters
-tables.
+tables. Spring Boot loads Liquibase's conventional master changelog without extra configuration:
 
-Migration files live under `src/main/resources/db/migration`:
+```text
+src/main/resources/db/changelog
+├── db.changelog-master.yaml
+└── changes
+    ├── 001-create-customers.yaml
+    ├── 002-create-products.yaml
+    ├── 003-create-inventory.yaml
+    └── 004-create-orders.yaml
+```
 
-| Version | File | Purpose |
-| --- | --- | --- |
-| V1 | `V1__create_orders.sql` | Original order-only schema |
-| V2 | `V2__add_order_lifecycle.sql` | Adds lifecycle states and `updated_at` |
-| V3 | `V3__expand_to_commerce.sql` | Adds customers, catalog, inventory, and order references/snapshots |
+The master changelog explicitly includes each file in dependency order. Each included file owns one
+stable changeset with a unique `id` and `author`, named constraints, and an explicit rollback. The
+changesets use Liquibase change types instead of embedding PostgreSQL DDL where a portable change
+type exists. PostgreSQL check constraints use small `sql` changes because the Community dependency
+does not include the commercial `addCheckConstraint` change type.
 
-V3 preserves rows produced by the earlier order-only version by backfilling deterministic legacy
-customer/product references before adding non-null constraints and foreign keys.
+Liquibase stores applied changesets in `databasechangelog` and coordinates concurrent startup with
+`databasechangeloglock`.
+
+### One-time transition from Flyway
+
+Flyway and Liquibase maintain different history tables. This teaching application replaces the old
+Flyway history with a Liquibase baseline of the current schema rather than implementing a production
+data migration between tools.
+
+If the local Compose volume was created by a Flyway-based version, back up anything you need and
+reset it once before starting this version:
+
+```bash
+docker compose down --volumes
+```
+
+This deletes the local PostgreSQL data. Production systems with data would require a planned
+Liquibase baseline, usually using `changelog-sync`, rather than deleting the database.
 
 ### Add a migration
 
-1. Never edit a migration that may already have run in a shared environment.
-2. Add the next version, for example:
+1. Never edit a changeset that may already have run in a shared environment.
+2. Add the next ordered file, for example:
 
    ```text
-   src/main/resources/db/migration/V4__describe_the_change.sql
+   src/main/resources/db/changelog/changes/005-describe-the-change.yaml
    ```
 
-3. Make upgrades safe for both populated and empty databases.
-4. Run `mvn clean verify`.
-5. Start the application against a fresh volume to test the complete migration chain.
-6. When compatibility matters, also test upgrading a database at the previous version.
+3. Give every changeset a stable, unique `id` and `author`; use named constraints and define rollback
+   behavior where rollback is safe.
+4. Add an explicit `include` to `db.changelog-master.yaml`. Do not rely on filesystem ordering.
+5. Make upgrades safe for both populated and empty databases.
+6. Run `mvn clean verify`.
+7. Start the application against a fresh volume to test the complete changelog.
+8. When compatibility matters, also test upgrading a database at the previous application version.
 
-Flyway validates migration checksums and applies pending versions during application startup.
+Liquibase validates changeset checksums and applies pending changesets during application startup.
 
 ## Test suite
 
@@ -223,7 +250,7 @@ more detail.
 
 - Keep the endpoint table and examples in [api.md](api.md) synchronized with controllers and web
   request/response records.
-- Keep migration history in this guide synchronized with Flyway files.
+- Keep the changelog layout in this guide synchronized with the Liquibase master file.
 - The architecture diagram embedded in the root README must match
   [commerce-hexagonal-architecture.mmd](diagrams/commerce-hexagonal-architecture.mmd).
 - Mermaid syntax can be validated with:
@@ -260,11 +287,11 @@ mvn spring-boot:run
 
 ### Schema validation fails
 
-Check Flyway history and compare the failing JPA column with the latest migration:
+Check Liquibase history and compare the failing JPA column with the latest changeset:
 
 ```bash
 docker compose exec postgres psql -U commerce -d commerce \
-  -c 'select * from flyway_schema_history order by installed_rank;'
+  -c 'select * from databasechangelog order by orderexecuted;'
 ```
 
 Do not switch Hibernate to `ddl-auto: update`; fix the migration or mapping mismatch explicitly.

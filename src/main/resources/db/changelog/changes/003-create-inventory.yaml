@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-inventory
+      author: codillas-academy
+      changes:
+        - createTable:
+            tableName: inventory
+            columns:
+              - column:
+                  name: product_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: inventory_pk
+              - column:
+                  name: available_quantity
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: inventory
+            baseColumnNames: product_id
+            referencedTableName: products
+            referencedColumnNames: id
+            constraintName: inventory_product_fk
+        - sql:
+            dbms: postgresql
+            sql: >-
+              ALTER TABLE inventory
+              ADD CONSTRAINT inventory_available_quantity_ck CHECK (available_quantity >= 0)
+      rollback:
+        - dropTable:
+            tableName: inventory

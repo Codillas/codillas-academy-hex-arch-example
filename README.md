@@ -8,7 +8,7 @@ feature in Spring Boot. It has four business modules backed by one PostgreSQL da
 - **Inventory** restocks, queries, reserves, and releases stock.
 - **Orders** places, queries, lists, confirms, and cancels orders.
 
-The current stack is Java 25, Spring Boot 4.1, Spring Modulith 2.1, PostgreSQL 18, Flyway,
+The current stack is Java 25, Spring Boot 4.1, Spring Modulith 2.1, PostgreSQL 18, Liquibase,
 Spring Data JPA, Maven, and Docker Compose.
 
 ## Documentation
@@ -135,11 +135,11 @@ flowchart TB
     subgraph infrastructure["Infrastructure"]
         direction LR
         compose["Spring Boot Docker Compose support<br/>start-and-stop lifecycle · health check"]
-        flyway["Flyway<br/>V1 → V2 → V3 migrations"]
+        liquibase["Liquibase<br/>master changelog · ordered YAML changesets"]
         postgres[("PostgreSQL<br/>customers · products · inventory · orders")]
 
         compose -->|starts| postgres
-        flyway -->|migrates schema| postgres
+        liquibase -->|migrates schema| postgres
     end
 
     subgraph guardrails["Architecture guardrails"]
@@ -162,7 +162,7 @@ flowchart TB
     oJpa -->|JPA / SQL| postgres
 
     boot -->|development lifecycle| compose
-    boot -->|runs at startup| flyway
+    boot -->|runs at startup| liquibase
     application -.->|module graph and public APIs| modulith
     application -.->|internal hexagonal boundaries| archunit
 
@@ -179,7 +179,7 @@ flowchart TB
     class cApi,cRepo,pApi,pRepo,iApi,iRepo,oApi,oRepo port
     class cService,pService,iService,oService applicationNode
     class cDomain,pDomain,iDomain,oDomain domainNode
-    class boot,compose,flyway springNode
+    class boot,compose,liquibase springNode
     class modulith,moduleTest,archunit guardrail
 ```
 
@@ -223,7 +223,7 @@ mvn spring-boot:run
 
 Spring Boot discovers `compose.yaml`, starts PostgreSQL, waits for its health check, and injects
 the connection details. Stopping the JVM stops PostgreSQL; the named volume preserves data.
-Flyway owns the schema and Hibernate only validates it.
+Liquibase owns the schema and Hibernate only validates it.
 
 Docker Compose integration is a development-time dependency, so it is intentionally excluded from
 the executable archive. To run the packaged JAR, start the infrastructure explicitly and pass the

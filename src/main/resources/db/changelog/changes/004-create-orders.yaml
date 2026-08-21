@@ -1,0 +1,110 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-orders
+      author: codillas-academy
+      changes:
+        - createTable:
+            tableName: orders
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: orders_pk
+              - column:
+                  name: customer_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: product_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: product_name
+                  type: VARCHAR(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: unit_price
+                  type: NUMERIC(19, 2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: orders
+            baseColumnNames: customer_id
+            referencedTableName: customers
+            referencedColumnNames: id
+            constraintName: orders_customer_fk
+        - addForeignKeyConstraint:
+            baseTableName: orders
+            baseColumnNames: product_id
+            referencedTableName: products
+            referencedColumnNames: id
+            constraintName: orders_product_fk
+        - sql:
+            dbms: postgresql
+            sql: >-
+              ALTER TABLE orders
+              ADD CONSTRAINT orders_product_name_not_blank_ck CHECK (length(trim(product_name)) > 0)
+        - sql:
+            dbms: postgresql
+            sql: >-
+              ALTER TABLE orders
+              ADD CONSTRAINT orders_unit_price_positive_ck CHECK (unit_price > 0)
+        - sql:
+            dbms: postgresql
+            sql: >-
+              ALTER TABLE orders
+              ADD CONSTRAINT orders_quantity_positive_ck CHECK (quantity > 0)
+        - sql:
+            dbms: postgresql
+            sql: >-
+              ALTER TABLE orders
+              ADD CONSTRAINT orders_status_ck
+              CHECK (status IN ('PLACED', 'CONFIRMED', 'CANCELLED'))
+        - createIndex:
+            tableName: orders
+            indexName: orders_customer_id_idx
+            columns:
+              - column:
+                  name: customer_id
+        - createIndex:
+            tableName: orders
+            indexName: orders_product_id_idx
+            columns:
+              - column:
+                  name: product_id
+        - createIndex:
+            tableName: orders
+            indexName: orders_created_at_idx
+            columns:
+              - column:
+                  name: created_at
+                  descending: true
+      rollback:
+        - dropTable:
+            tableName: orders
